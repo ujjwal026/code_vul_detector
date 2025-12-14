@@ -1,0 +1,70 @@
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+
+# =========================
+# Logs
+# =========================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Node / Build artifacts
+# =========================
+node_modules
+dist
+dist-ssr
+*.local
+
+# =========================
+# Debug / Test / Scan files
+# =========================
+.agent
+debug_fix_flow.py
+debug_repo.py
+debug_repo_detailed.py
+debug_scan.py
+demo_scan.py
+post_test.py
+
+scan_debug.json
+scan_output.json
+
+semgrep_debug.py
+semgrep_test.py
+test_bandit.py
+test_scanners.py
+test_semgrep_direct.py
+vulnerable_test.py
+test_vulnerable.js
+
+test_output.txt
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+
+# =========================
+# Editor & OS files
+# =========================
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

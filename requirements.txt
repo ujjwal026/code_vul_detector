@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pytest
+httpx
+python-multipart
+semgrep
+safety
+checkov
+detect-secrets
+openai
+python-dotenv
+pymongo
+dnspython
+# bandit removed: using semgrep for SAST
