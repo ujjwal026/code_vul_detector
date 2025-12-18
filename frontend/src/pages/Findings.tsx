@@ -19,6 +19,19 @@ const Findings = () => {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [findings, setFindings] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+
+  // Check if a scan is in progress
+  useEffect(() => {
+    const checkScanning = () => {
+      const scanning = localStorage.getItem("scanning");
+      setIsScanning(scanning === "true");
+    };
+    
+    checkScanning();
+    const interval = setInterval(checkScanning, 500);
+    return () => clearInterval(interval);
+  }, []);
 
   // If navigated with specific results (from a fresh scan), show them immediately
   useEffect(() => {
@@ -103,10 +116,10 @@ const Findings = () => {
       severity: mapSeverity(res.severity),
       file: res.file,
       line: res.line,
-      confidence: 90,
       status: "open",
       title: res.vuln || res.message?.slice(0, 50) || "Vulnerability",
       message: res.message,
+      original_code: res.original_code,
       fixed_code: res.fixed_code,
       original_result: res
     }));
@@ -124,11 +137,20 @@ const Findings = () => {
 
       <main className="flex-1 overflow-auto">
         <div className="p-8 space-y-6">
-          <div>
-            <h1 className="text-4xl font-bold">Security Findings</h1>
-            <p className="text-muted-foreground mt-2">
-              {selectedProject ? `Viewing findings for ${selectedProject.name}` : "Select a project to view findings"}
-            </p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-4xl font-bold">Security Findings</h1>
+              <p className="text-muted-foreground mt-2">
+                {selectedProject ? `Viewing findings for ${selectedProject.name}` : "Select a project to view findings"}
+              </p>
+            </div>
+            {/* Scanning indicator badge */}
+            {isScanning && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 animate-pulse">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium text-blue-500">Scan In Progress</span>
+              </div>
+            )}
           </div>
 
           {!selectedProject ? (
@@ -173,7 +195,6 @@ const Findings = () => {
                         <TableHead>Severity</TableHead>
                         <TableHead>Title</TableHead>
                         <TableHead>File</TableHead>
-                        <TableHead className="text-center">Confidence</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead></TableHead>
                       </TableRow>
@@ -199,17 +220,6 @@ const Findings = () => {
                             <TableCell className="font-medium">{finding.title}</TableCell>
                             <TableCell className="font-mono text-sm text-muted-foreground">
                               {finding.file}:{finding.line}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <div className="flex-1 bg-muted rounded-full h-2 max-w-[60px]">
-                                  <div
-                                    className="bg-primary h-full rounded-full"
-                                    style={{ width: `${finding.confidence}%` }}
-                                  />
-                                </div>
-                                <span className="text-sm font-semibold">{finding.confidence}%</span>
-                              </div>
                             </TableCell>
                             <TableCell>
                               <span className={`text-xs px-2 py-1 rounded-full ${finding.status === "open" ? "bg-red-500/20 text-red-500" :

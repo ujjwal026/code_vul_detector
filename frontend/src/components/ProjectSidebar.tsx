@@ -1,6 +1,8 @@
-import { Shield, Home, Search, Upload, Settings, FolderOpen, Trash2 } from "lucide-react";
+import { Shield, Home, Search, Upload, Settings, FolderOpen, Trash2, Plus } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -10,6 +12,8 @@ const API_BASE = "http://localhost:8000";
 
 const ProjectSidebar = () => {
   const [projects, setProjects] = useState<any[]>([]);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
   const navigate = useNavigate();
 
   
@@ -42,6 +46,27 @@ const ProjectSidebar = () => {
 
   const handleProjectClick = (projectId: string) => {
     navigate("/findings", { state: { projectId } });
+  };
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) {
+      toast.error("Project name cannot be empty");
+      return;
+    }
+    try {
+      const response = await axios.post(`${API_BASE}/projects/`, { name: newProjectName });
+      if (response.data && response.data.project_id) {
+        setProjects([response.data, ...projects]);
+        setIsCreatingProject(false);
+        setNewProjectName("");
+        toast.success(`Project "${response.data.name}" created!`);
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (error) {
+      console.error("Create project failed", error);
+      toast.error("Failed to create project. Please try again.");
+    }
   };
 
   return (
@@ -90,9 +115,54 @@ const ProjectSidebar = () => {
       </nav>
 
       <div className="flex-1 overflow-hidden">
-        <div className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Recent Projects
+        <div className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+          <span>Recent Projects</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCreatingProject(!isCreatingProject)}
+            className="h-5 w-5 p-0 hover:bg-sidebar-accent"
+            title="Create new project"
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
         </div>
+
+        {isCreatingProject && (
+          <div className="px-4 py-3 space-y-2 border-b border-sidebar-border">
+            <Input
+              placeholder="Project name..."
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === "Enter") handleCreateProject();
+              }}
+              className="h-8 text-xs"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleCreateProject}
+                className="text-xs h-7 flex-1"
+              >
+                Create
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setIsCreatingProject(false);
+                  setNewProjectName("");
+                }}
+                className="text-xs h-7 flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ScrollArea className="h-full">
           <div className="px-4 space-y-1 pb-4">
             {projects.length === 0 ? (

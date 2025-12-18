@@ -2,6 +2,7 @@ import asyncio
 import subprocess
 import json
 import logging
+from app.services.logger import log_scan_event
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,12 @@ def run_checkov_sync(path: str):
     except Exception as e:
         return "", str(e), -1
 
-async def scan(path: str):
+async def scan(path: str, scan_id: str = None):
     """Real Config scanner using Checkov."""
     try:
+        if scan_id:
+            await log_scan_event(scan_id, "⚙️ Config: Scanning for misconfigurations and policy violations", "info")
+        
         # Run checkov in thread pool
         stdout, stderr, returncode = await asyncio.to_thread(run_checkov_sync, path)
         
@@ -34,16 +38,24 @@ async def scan(path: str):
         if not stdout and returncode not in [0, 1]:
             # If checkov is missing, return a friendly note instead of an error
             if stderr and "Checkov not found" in stderr:
+                if scan_id:
+                    await log_scan_event(scan_id, f"ℹ️ Config: Checkov not installed - skipping", "info")
                 return {"tool": "Config", "note": stderr.strip(), "results": []}
             logger.error(f"Checkov failed: {stderr}")
+            if scan_id:
+                await log_scan_event(scan_id, f"❌ Config: Checkov error: {stderr[:100]}", "error")
             return {"tool": "Config", "error": stderr[:200], "results": []}
 
         if not stdout:
+            if scan_id:
+                await log_scan_event(scan_id, "✅ Config: No configuration issues found", "success")
             return {"tool": "Config", "results": []}
 
         try:
             output = json.loads(stdout)
         except json.JSONDecodeError:
+            if scan_id:
+                await log_scan_event(scan_id, "❌ Config: Could not parse Checkov output", "error")
             return {"tool": "Config", "error": "Failed to parse Checkov output", "results": []}
 
         results = []
@@ -63,9 +75,14 @@ async def scan(path: str):
                     "lines": check.get("file_line_range"),
                     "severity": "HIGH"
                 })
+        
+        if scan_id and results:
+            await log_scan_event(scan_id, f"⚠️ Config: Found {len(results)} configuration issues", "warning")
             
         return {"tool": "Config", "results": results, "count": len(results)}
 
     except Exception as e:
         logger.exception("Config scan failed")
+        if scan_id:
+            await log_scan_event(scan_id, f"❌ Config: Exception: {str(e)[:100]}", "error")
         return {"tool": "Config", "error": str(e), "results": []}

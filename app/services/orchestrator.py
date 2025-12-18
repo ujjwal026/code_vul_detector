@@ -2,18 +2,25 @@ import asyncio
 import os
 from app.services.scanners import sast, sca, secrets, config
 from app.services.fixer import FixerService
+from app.services.logger import log_scan_event
 
 fixer = FixerService()
 
-async def run_scans(target_path: str):
+async def run_scans(target_path: str, scan_id: str = None):
     """Runs all scanners in parallel and generates AI fixes for vulnerabilities."""
+    if scan_id:
+        await log_scan_event(scan_id, "🔍 Initializing scanners (SAST, SCA, Secrets, Config)", "info")
+    
     results = await asyncio.gather(
-        sast.scan(target_path),
-        sca.scan(target_path),
-        secrets.scan(target_path),
-        config.scan(target_path),
+        sast.scan(target_path, scan_id),
+        sca.scan(target_path, scan_id),
+        secrets.scan(target_path, scan_id),
+        config.scan(target_path, scan_id),
         return_exceptions=True
     )
+    
+    if scan_id:
+        await log_scan_event(scan_id, "🔗 Merging scanner results", "info")
     
     final_results = []
     
@@ -42,14 +49,15 @@ async def run_scans(target_path: str):
                     # Verify file exists
                     if os.path.exists(file_path) and os.path.isfile(file_path):
                         # Schedule the fix generation
-                        fix_tasks.append(generate_fix_for_item(item, file_path, fixer))
+                        fix_tasks.append(generate_fix_for_item(item, file_path, fixer, scan_id))
                     else:
                         print(f"⚠️ File not found for fix generation: {file_path}")
                         item["fixed_code"] = "Error: Source file not found."
 
     # Run all fix tasks in parallel, but limit concurrency
     if fix_tasks:
-        print(f"🚀 Starting parallel fix generation for {len(fix_tasks)} findings...")
+        if scan_id:
+            await log_scan_event(scan_id, f"🤖 Generating AI fixes for {len(fix_tasks)} findings...", "info")
         # Limit to 5 concurrent LLM calls to prevent rate limiting/timeouts
         semaphore = asyncio.Semaphore(5)
         
@@ -60,11 +68,12 @@ async def run_scans(target_path: str):
         # Wrap tasks with semaphore
         wrapped_tasks = [sem_task(t) for t in fix_tasks]
         await asyncio.gather(*wrapped_tasks)
-        print("✅ Parallel fix generation complete.")
+        if scan_id:
+            await log_scan_event(scan_id, "✅ AI fix generation complete", "success")
     
     return final_results
 
-async def generate_fix_for_item(item, file_path, fixer_service):
+async def generate_fix_for_item(item, file_path, fixer_service, scan_id: str = None):
     """Helper function to generate a fix for a single item and update it in-place."""
     try:
         # Read file content
@@ -72,6 +81,7 @@ async def generate_fix_for_item(item, file_path, fixer_service):
         
         if not content:
             item["fixed_code"] = "Error: Could not read file content."
+            item["original_code"] = ""
             return
 
         line_num = item.get("line")
@@ -79,21 +89,29 @@ async def generate_fix_for_item(item, file_path, fixer_service):
         # Generate fix with timeout
         # Use asyncio.wait_for to enforce a timeout on the LLM call
         try:
-            fixed_code = await asyncio.wait_for(
+            if scan_id:
+                await log_scan_event(scan_id, f"🔧 Generating fix for {item.get('file', 'unknown')}", "info")
+            
+            fix_result = await asyncio.wait_for(
                 asyncio.to_thread(fixer_service.fix_code, content, item["message"], line_num),
                 timeout=15.0 # 15 seconds per fix max
             )
             
-            if fixed_code:
-                item["fixed_code"] = fixed_code
+            if isinstance(fix_result, dict):
+                item["original_code"] = fix_result.get("original_code", content)
+                item["fixed_code"] = fix_result.get("fixed_code", "AI could not generate a fix.")
             else:
-                item["fixed_code"] = "AI could not generate a fix."
+                # Fallback for older format
+                item["original_code"] = content
+                item["fixed_code"] = fix_result if fix_result else "AI could not generate a fix."
         except asyncio.TimeoutError:
             print(f"⚠️ Fix generation timed out for {item.get('file')}")
+            item["original_code"] = content
             item["fixed_code"] = "Error: Fix generation timed out."
             
     except Exception as e:
         print(f"❌ Async fix generation failed: {e}")
+        item["original_code"] = ""
         item["fixed_code"] = f"Error generating fix: {e}"
 
 def read_file_safe(path):

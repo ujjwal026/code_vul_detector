@@ -3,6 +3,7 @@ import subprocess
 import json
 import logging
 import shutil
+from app.services.logger import log_scan_event
 
 logger = logging.getLogger(__name__)
 
@@ -40,18 +41,21 @@ def run_detect_secrets_sync(path: str):
     except Exception as e:
         return "", str(e), -1
 
-async def scan(path: str):
+async def scan(path: str, scan_id: str = None):
     """Real Secrets scanner using Gitleaks (preferred) or Detect-Secrets."""
+    
+    if scan_id:
+        await log_scan_event(scan_id, "🔐 Secrets: Scanning for exposed credentials", "info")
     
     # Check if gitleaks is available
     gitleaks_path = shutil.which("gitleaks")
     
     if gitleaks_path:
-        return await scan_gitleaks(path)
+        return await scan_gitleaks(path, scan_id)
     else:
-        return await scan_detect_secrets(path)
+        return await scan_detect_secrets(path, scan_id)
 
-async def scan_gitleaks(path: str):
+async def scan_gitleaks(path: str, scan_id: str = None):
     try:
         # Run gitleaks in thread pool
         stdout, stderr, returncode = await asyncio.to_thread(run_gitleaks_sync, path)
@@ -59,9 +63,13 @@ async def scan_gitleaks(path: str):
         # Gitleaks returns 1 if secrets found
         if returncode not in [0, 1] and stderr:
              logger.error(f"Gitleaks failed: {stderr}")
+             if scan_id:
+                 await log_scan_event(scan_id, f"❌ Secrets: Gitleaks error: {stderr[:100]}", "error")
              return {"tool": "Secrets", "error": stderr[:200], "results": []}
 
         if not stdout or stdout.strip() == "":
+            if scan_id:
+                await log_scan_event(scan_id, "✅ Secrets: No exposed credentials found", "success")
             return {"tool": "Secrets", "results": []}
 
         try:
@@ -80,22 +88,31 @@ async def scan_gitleaks(path: str):
                     "severity": "CRITICAL"
                 })
         
+        if scan_id and formatted_results:
+            await log_scan_event(scan_id, f"⚠️ Secrets: Found {len(formatted_results)} exposed credentials", "warning")
+        
         return {"tool": "Secrets", "results": formatted_results, "count": len(formatted_results)}
 
     except Exception as e:
         logger.exception("Gitleaks scan failed")
+        if scan_id:
+            await log_scan_event(scan_id, f"❌ Secrets: Gitleaks exception: {str(e)[:100]}", "error")
         return {"tool": "Secrets", "error": str(e), "results": []}
 
-async def scan_detect_secrets(path: str):
+async def scan_detect_secrets(path: str, scan_id: str = None):
     try:
         # Run detect-secrets in thread pool
         stdout, stderr, returncode = await asyncio.to_thread(run_detect_secrets_sync, path)
         
         if returncode != 0 and not stdout:
              logger.error(f"Detect-secrets failed: {stderr}")
+             if scan_id:
+                 await log_scan_event(scan_id, f"❌ Secrets: Detect-secrets error: {stderr[:100]}", "error")
              return {"tool": "Secrets", "error": stderr[:200], "results": []}
 
         if not stdout:
+            if scan_id:
+                await log_scan_event(scan_id, "✅ Secrets: No exposed credentials found", "success")
             return {"tool": "Secrets", "results": []}
 
         try:
@@ -113,9 +130,14 @@ async def scan_detect_secrets(path: str):
                     "line": secret.get("line_number"),
                     "severity": "HIGH"
                 })
+        
+        if scan_id and results:
+            await log_scan_event(scan_id, f"⚠️ Secrets: Found {len(results)} potential secrets", "warning")
                 
         return {"tool": "Secrets", "results": results, "count": len(results)}
 
     except Exception as e:
         logger.exception("Detect-secrets scan failed")
+        if scan_id:
+            await log_scan_event(scan_id, f"❌ Secrets: Detect-secrets exception: {str(e)[:100]}", "error")
         return {"tool": "Secrets", "error": str(e), "results": []}

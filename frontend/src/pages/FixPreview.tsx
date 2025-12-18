@@ -21,7 +21,7 @@ const FixPreview = () => {
         );
     }
 
-    const originalCode = finding.original_result?.code || `// Vulnerable code at line ${finding.line}\n// ... source code not available ...`;
+    const originalCode = finding.original_code || finding.original_result?.code || `// Vulnerable code at line ${finding.line}\n// ... source code not available ...`;
     const fixedCode = finding.fixed_code || "// No fix generated";
 
     const handleAccept = () => {
@@ -93,8 +93,8 @@ const FixPreview = () => {
                                         addedColor: '#c9d1d9',
                                         removedBackground: 'rgba(248, 81, 73, 0.15)',
                                         removedColor: '#c9d1d9',
-                                        wordAddedBackground: 'rgba(46, 160, 67, 0.4)',
-                                        wordRemovedBackground: 'rgba(248, 81, 73, 0.4)',
+                                        wordAddedBackground: 'rgba(46, 160, 67, 0.15)',
+                                        wordRemovedBackground: 'rgba(248, 81, 73, 0.15)',
                                         addedGutterBackground: 'rgba(46, 160, 67, 0.15)',
                                         removedGutterBackground: 'rgba(248, 81, 73, 0.15)',
                                         gutterBackground: '#0d1117',
@@ -114,6 +114,12 @@ const FixPreview = () => {
                                     padding: '0 10px',
                                     textAlign: 'right',
                                     color: '#484f58',
+                                },
+                                wordDiff: {
+                                    padding: '0',
+                                    margin: '0',
+                                    borderRadius: '0',
+                                    backgroundColor: 'transparent !important',
                                 }
                             }}
                         />

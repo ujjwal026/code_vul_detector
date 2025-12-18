@@ -1,0 +1,85 @@
+rules:
+  - id: python-sql-injection-fstring
+    pattern-either:
+      - patterns:
+          - pattern: |
+              $QUERY = f"...{$VAR}..."
+              ...
+              $CURSOR.execute($QUERY, ...)
+          - metavariable-comparison:
+              metavariable: $QUERY
+              comparison: regex
+              value: '(SELECT|INSERT|UPDATE|DELETE|WHERE|FROM)'
+      - pattern: |
+          $QUERY = f"...{$VAR}..."
+          ...
+          cursor.execute($QUERY)
+      - pattern: |
+          cursor.execute(f"...{...}...")
+      - pattern: |
+          conn.execute(f"...{...}...")
+    message: "SQL Injection vulnerability: Using f-strings or string concatenation in SQL queries is dangerous. Use parameterized queries instead."
+    languages: [python]
+    severity: HIGH
+    metadata:
+      cwe: CWE-89
+      owasp: A03:2021 – Injection
+
+  - id: python-sql-injection-concat
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $QUERY = "..." + $VAR + "..."
+              ...
+              $CURSOR.execute($QUERY)
+          - pattern: |
+              $QUERY = "..." % $ARGS
+              ...
+              $CURSOR.execute($QUERY)
+          - pattern: |
+              $CURSOR.execute("..." + $VAR)
+          - pattern: |
+              $CURSOR.execute("..." % $ARGS)
+    message: "SQL Injection vulnerability: Using string concatenation or %-formatting in SQL queries is dangerous. Use parameterized queries instead."
+    languages: [python]
+    severity: HIGH
+    metadata:
+      cwe: CWE-89
+      owasp: A03:2021 – Injection
+
+  - id: python-sql-injection-format
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $QUERY = "...{...}...".format(...)
+              ...
+              $CURSOR.execute($QUERY)
+          - pattern: |
+              $CURSOR.execute("...{...}...".format(...))
+    message: "SQL Injection vulnerability: Using .format() on SQL queries with user input is dangerous. Use parameterized queries instead."
+    languages: [python]
+    severity: HIGH
+    metadata:
+      cwe: CWE-89
+      owasp: A03:2021 – Injection
+
+  - id: python-sql-injection-direct
+    patterns:
+      - pattern: |
+          $CURSOR.execute(f"SELECT ... WHERE ... = '{$USERNAME}'")
+      - pattern: |
+          $CURSOR.execute(f"SELECT * FROM ... WHERE ... = '{$INPUT}'")
+    message: "SQL Injection vulnerability: Direct user input in SQL query. Use parameterized queries: cursor.execute('SELECT * FROM users WHERE username = ?', (username,))"
+    languages: [python]
+    severity: CRITICAL
+    metadata:
+      cwe: CWE-89
+      owasp: A03:2021 – Injection
+      remediation: |
+        ❌ VULNERABLE:
+        query = f"SELECT * FROM users WHERE username = '{username}'"
+        cursor.execute(query)
+        
+        ✅ SAFE:
+        query = "SELECT * FROM users WHERE username = ?"
+        cursor.execute(query, (username,))

@@ -1,4 +1,5 @@
 import ProjectSidebar from "@/components/ProjectSidebar";
+import ScanLogViewer from "@/components/ScanLogViewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,13 @@ import { toast } from "sonner";
 
 const API_BASE = "http://localhost:8000";
 
+interface LogEntry {
+  timestamp: string;
+  message: string;
+  level: 'info' | 'warning' | 'error' | 'success';
+  details?: Record<string, any>;
+}
+
 const Scan = () => {
   const navigate = useNavigate();
   const [isScanning, setIsScanning] = useState(false);
@@ -22,6 +30,8 @@ const Scan = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [currentScanId, setCurrentScanId] = useState<string | null>(null);
 
   // State for inputs
   const [textInput, setTextInput] = useState("");
@@ -32,6 +42,47 @@ const Scan = () => {
   useEffect(() => {
     fetchProjects();
   }, []);
+
+  // Poll for logs when scan is running
+  useEffect(() => {
+    if (!isScanning || !currentScanId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const logsResponse = await axios.get(`${API_BASE}/scan/${currentScanId}/logs`);
+        if (logsResponse.data.logs) {
+          setLogs(logsResponse.data.logs);
+        }
+        
+        // Also check scan status
+        const statusResponse = await axios.get(`${API_BASE}/scan/${currentScanId}/status`);
+        if (statusResponse.data.status === "completed" && statusResponse.data.results) {
+          setIsScanning(false);
+          toast.success("Scan completed successfully!");
+          localStorage.removeItem("scanning");
+          
+          // Navigate to findings
+          setTimeout(() => {
+            navigate("/findings", {
+              state: {
+                results: statusResponse.data.results,
+                scanId: currentScanId
+              }
+            });
+          }, 1000);
+        } else if (statusResponse.data.status === "failed") {
+          setIsScanning(false);
+          toast.error(statusResponse.data.error || "Scan failed");
+          localStorage.removeItem("scanning");
+        }
+      } catch (error) {
+        // Silently handle error - endpoints might not be available yet
+        console.debug("Poll error:", error);
+      }
+    }, 1000); // Poll every second
+
+    return () => clearInterval(interval);
+  }, [isScanning, currentScanId]);
 
   const fetchProjects = async () => {
     try {
@@ -72,6 +123,10 @@ const Scan = () => {
     }
 
     setIsScanning(true);
+    setLogs([]);
+    // Store scanning state in localStorage so other pages can see it
+    localStorage.setItem("scanning", "true");
+    
     let endpoint = "";
     let payload: any = {};
     let headers = { "Content-Type": "application/json" };
@@ -81,6 +136,7 @@ const Scan = () => {
         if (!textInput.trim()) {
           toast.error("Please paste some code first.");
           setIsScanning(false);
+          localStorage.removeItem("scanning");
           return;
         }
         endpoint = "/scan/text";
@@ -89,6 +145,7 @@ const Scan = () => {
         if (!repoUrl.trim()) {
           toast.error("Please enter a repository URL.");
           setIsScanning(false);
+          localStorage.removeItem("scanning");
           return;
         }
         endpoint = "/scan/repo";
@@ -97,6 +154,7 @@ const Scan = () => {
         if (!file) {
           toast.error("Please select a file to upload.");
           setIsScanning(false);
+          localStorage.removeItem("scanning");
           return;
         }
         endpoint = "/scan/file";
@@ -107,25 +165,31 @@ const Scan = () => {
         headers = { "Content-Type": "multipart/form-data" };
       }
 
-      toast.info("Scan started... this may take a moment.");
+      toast.info("Scan started in background... Logs will appear below.");
 
-      const response = await axios.post(`${API_BASE}${endpoint}`, payload, { headers });
-
-      toast.success("Scan completed successfully!");
-
-      // Navigate to findings page with the results
-      navigate("/findings", {
-        state: {
-          results: response.data.results,
-          scanId: response.data.scan_id
-        }
-      });
-
+      // Start scan immediately and get scan_id
+      axios.post(`${API_BASE}${endpoint}`, payload, { headers })
+        .then((response) => {
+          const scanId = response.data.scan_id;
+          setCurrentScanId(scanId);
+          toast.success(`Scan queued! (ID: ${scanId.slice(0, 8)}...)`);
+          
+          // Reset only the current tab's inputs
+          if (activeTab === "paste") setTextInput("");
+          if (activeTab === "git") setRepoUrl("");
+          if (activeTab === "upload") setFile(null);
+        })
+        .catch((error: any) => {
+          console.error("Scan initiation failed:", error);
+          toast.error(error.response?.data?.detail || "Failed to start scan.");
+          setIsScanning(false);
+          localStorage.removeItem("scanning");
+        });
     } catch (error: any) {
-      console.error("Scan failed:", error);
-      toast.error(error.response?.data?.detail || "An error occurred during scanning.");
-    } finally {
+      console.error("Scan initiation failed:", error);
+      toast.error(error.response?.data?.detail || "Failed to start scan.");
       setIsScanning(false);
+      localStorage.removeItem("scanning");
     }
   };
 
@@ -135,9 +199,17 @@ const Scan = () => {
 
       <main className="flex-1 overflow-auto">
         <div className="p-8 space-y-6">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight">New Security Scan</h1>
-            <p className="text-muted-foreground mt-2">Select a project to start scanning</p>
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight">New Security Scan</h1>
+              <p className="text-muted-foreground mt-2">{isScanning ? "Scanning in progress..." : "Select a project to start scanning"}</p>
+            </div>
+            {isScanning && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 animate-pulse">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium text-blue-500">Scan In Progress</span>
+              </div>
+            )}
           </div>
 
           <div className="max-w-4xl space-y-6">
@@ -240,22 +312,46 @@ const Scan = () => {
                     </TabsList>
 
                     <TabsContent value="upload" className="space-y-4 mt-6">
-                      <div className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary transition-all cursor-pointer bg-muted/10 relative">
+                      <div className={`border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer relative ${
+                        file
+                          ? "border-green-500/50 bg-green-500/5 hover:border-green-600"
+                          : "border-border hover:border-primary bg-muted/10"
+                      }`}>
                         <input
                           type="file"
                           className="absolute inset-0 opacity-0 cursor-pointer"
                           onChange={(e) => setFile(e.target.files?.[0] || null)}
                         />
-                        <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-lg font-medium mb-2">
-                          {file ? file.name : "Drop files here or click to browse"}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Supports individual source files
-                        </p>
-                        <Button variant="outline" className="mt-4 pointer-events-none">
-                          Select Files
-                        </Button>
+                        {file ? (
+                          <>
+                            <Check className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                            <p className="text-lg font-medium mb-2 text-green-700 dark:text-green-400">
+                              File Uploaded
+                            </p>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {file.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              ({(file.size / 1024).toFixed(2)} KB)
+                            </p>
+                            <Button variant="outline" className="mt-4 pointer-events-none" size="sm">
+                              Change File
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                            <p className="text-lg font-medium mb-2">
+                              Drop files here or click to browse
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Supports individual source files
+                            </p>
+                            <Button variant="outline" className="mt-4 pointer-events-none">
+                              Select Files
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TabsContent>
 
@@ -330,6 +426,11 @@ const Scan = () => {
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* Show logs when scanning */}
+            {(isScanning || logs.length > 0) && (
+              <ScanLogViewer logs={logs} isScanning={isScanning} />
             )}
           </div>
         </div>
