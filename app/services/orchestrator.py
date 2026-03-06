@@ -58,16 +58,18 @@ async def run_scans(target_path: str, scan_id: str = None):
     if fix_tasks:
         if scan_id:
             await log_scan_event(scan_id, f"🤖 Generating AI fixes for {len(fix_tasks)} findings...", "info")
-        # Limit to 5 concurrent LLM calls to prevent rate limiting/timeouts
-        semaphore = asyncio.Semaphore(5)
+        # Limit to 2 concurrent LLM calls to avoid rate limiting (Groq has 6000 TPM limit)
+        semaphore = asyncio.Semaphore(2)
         
         async def sem_task(task_func):
             async with semaphore:
+                # Add a small delay between requests to avoid rate limiting
+                await asyncio.sleep(0.5)
                 return await task_func
         
         # Wrap tasks with semaphore
         wrapped_tasks = [sem_task(t) for t in fix_tasks]
-        await asyncio.gather(*wrapped_tasks)
+        await asyncio.gather(*wrapped_tasks, return_exceptions=True)
         if scan_id:
             await log_scan_event(scan_id, "✅ AI fix generation complete", "success")
     

@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -50,31 +51,59 @@ class FixerService:
             original_context = context_code  # Store the original context for diff comparison
 
         try:
-            response = self.client.chat.completions.create(
-                model="qwen/qwen3-32b",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an automated secure code fixing engine.\n"
-                            "YOUR RESPONSE MUST FOLLOW THESE RULES EXACTLY:\n\n"
-                            "1. Output ONLY the fixed code - nothing else\n"
-                            "2. NEVER include <think>, </think>, or any XML tags\n"
-                            "3. NEVER include markdown code fences (```)\n"
-                            "4. NEVER include explanations, comments, or reasoning\n"
-                            "5. NEVER include any text outside the code itself\n"
-                            "6. Return only valid, executable Python code\n"
-                            "7. Each line must be real Python code - no comments explaining the fix\n\n"
-                            "If you need to explain the fix, put it ONLY in actual Python comments using #"
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Fix the security vulnerability in this code:\n{context_code}"
-                    }
-                ],
-                temperature=0.0,
-            )
+            # Retry logic for rate limits
+            max_retries = 3
+            retry_delay = 2  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.chat.completions.create(
+                        model="qwen/qwen3-32b",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are an automated secure code fixing engine.\n"
+                                    "YOUR RESPONSE MUST FOLLOW THESE RULES EXACTLY:\n\n"
+                                    "1. Output ONLY the fixed code - nothing else\n"
+                                    "2. NEVER include <think>, </think>, or any XML tags\n"
+                                    "3. NEVER include markdown code fences (```)\n"
+                                    "4. NEVER include explanations, comments, or reasoning\n"
+                                    "5. NEVER include any text outside the code itself\n"
+                                    "6. Return only valid, executable Python code\n"
+                                    "7. Each line must be real Python code - no comments explaining the fix\n\n"
+                                    "If you need to explain the fix, put it ONLY in actual Python comments using #"
+                                )
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Fix the security vulnerability in this code:\n{context_code}"
+                            }
+                        ],
+                        temperature=0.0,
+                    )
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "rate_limit" in error_str or "429" in error_str:
+                        if attempt < max_retries - 1:
+                            # Extract wait time from error message if available
+                            wait_time = retry_delay * (attempt + 1)
+                            if "try again in" in error_str:
+                                try:
+                                    # Try to extract the wait time from error message
+                                    match = re.search(r'(\d+\.?\d*)\s*s', error_str)
+                                    if match:
+                                        wait_time = float(match.group(1)) + 0.5  # Add buffer
+                                except:
+                                    pass
+                            
+                            print(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                            time.sleep(wait_time)
+                            continue
+                    # If not a rate limit error or last retry, raise
+                    raise
 
             content = response.choices[0].message.content.strip()
 

@@ -212,7 +212,10 @@ const Scan = () => {
             )}
           </div>
 
-          <div className="max-w-4xl space-y-6">
+          {/* Grid layout: Scan form on left, Logs on right */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left column: Scan form */}
+            <div className="space-y-6">
             {!selectedProjectId ? (
               /* Project Selection Card */
               <Card className="card-elevated border-border/50 bg-card/50 backdrop-blur-sm">
@@ -427,11 +430,14 @@ const Scan = () => {
                 </CardContent>
               </Card>
             )}
+            </div>
 
-            {/* Show logs when scanning */}
-            {(isScanning || logs.length > 0) && (
-              <ScanLogViewer logs={logs} isScanning={isScanning} />
-            )}
+            {/* Right column: Logs */}
+            <div className="lg:sticky lg:top-6 lg:self-start">
+              {(isScanning || logs.length > 0) && (
+                <ScanLogViewer logs={logs} isScanning={isScanning} />
+              )}
+            </div>
           </div>
         </div>
       </main>

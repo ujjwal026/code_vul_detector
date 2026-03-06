@@ -82,7 +82,7 @@ const ScanLogViewer: React.FC<ScanLogViewerProps> = ({ logs, isScanning }) => {
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-96 border border-border/50 rounded-lg bg-background/50 p-4">
+        <ScrollArea className="h-[600px] border border-border/50 rounded-lg bg-background/50 p-4">
           <div className="space-y-2">
             {logs.length === 0 ? (
               <div className="text-sm text-muted-foreground text-center py-8">
